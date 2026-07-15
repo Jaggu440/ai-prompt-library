@@ -1,0 +1,24 @@
+name: Prime Debugger
+version: 1.0
+author: Srinuvasarao Jagarlamudi
+description: Analyze Prime Video playback logs.
+
+inputs:
+  - log_file
+
+prompt: |
+  Analyze Prime Video logs.
+
+  Determine:
+
+  - Playback failures
+  - HDCP issues
+  - DRM issues
+  - Network issues
+  - App crashes
+
+  Provide:
+
+  - Root Cause
+  - Impact
+  - Suggested Fix

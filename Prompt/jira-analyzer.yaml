@@ -1,0 +1,176 @@
+promptDefinition:
+  name: Jira Ticket Analysis Assistant
+  version: 1.0
+  author: Srinuvasarao Jagarlamudi
+  description: |
+    Fetches Jira ticket details and provides AI-powered analysis of progress, blockers, and stakeholders.
+    Link to this prompt's video tutorial and execution results:
+    https://etwiki.sys.comcast.net/display/RDKV/AI+Workbench+Prompt+Tutorials+and+Usage+Videos#AIWorkbenchPromptTutorialsandUsageVideos-JiraTicketAnalysisAssistant
+  detailedDescription: 'Retrieves comprehensive information from a Jira ticket using ticket key and PAT, then analyzes the ticket progress, identifies blockers, and provides insights based on natural language queries'
+  inputs:
+    - id: 'ticketKey'
+      type: 'text'
+      description: 'Jira ticket key (e.g., XXXXR-196)'
+      required: true
+    - id: 'userQuery'
+      type: 'multiline-text'
+      description: 'Your question or analysis request about the Jira ticket'
+      required: true
+
+  context:
+    - id: 'jiraTicketData'
+      type: 'remote-api'
+      url: "{{secrets.JIRA_BASE_URL}}/rest/api/2/issue/{{inputs.ticketKey}}?expand=changelog,names"
+      method: 'GET'
+      headers:
+        Authorization: "Bearer {{secrets.JIRA_PAT}}"
+        Accept: "application/json"
+      transformer: |
+        try {
+          const data = JSON.parse(response);
+
+          // Extract key ticket information
+          const key = data?.key ?? '{{inputs.ticketKey}}';
+          const summary = data?.fields?.summary ?? 'No summary';
+          const description = data?.fields?.description?.content?.[0]?.content?.[0]?.text ?? 'No description provided';
+          const status = data?.fields?.status?.name ?? 'Unknown';
+          const priority = data?.fields?.priority?.name ?? 'Unknown';
+          const assignee = data?.fields?.assignee?.displayName ?? 'Unassigned';
+          const assigneeEmail = data?.fields?.assignee?.emailAddress ?? 'N/A';
+          const reporter = data?.fields?.reporter?.displayName ?? 'Unknown';
+          const reporterEmail = data?.fields?.reporter?.emailAddress ?? 'N/A';
+          const created = data?.fields?.created ?? 'Unknown';
+          const updated = data?.fields?.updated ?? 'Unknown';
+          const dueDate = data?.fields?.duedate ?? 'No due date';
+          const issueType = data?.fields?.issuetype?.name ?? 'Unknown';
+          const project = data?.fields?.project?.name ?? 'Unknown Project';
+          const labels = data?.fields?.labels?.join(', ') || 'No labels';
+          const components = data?.fields?.components?.map(c => c.name)?.join(', ') || 'No components';
+          const fixVersions = data?.fields?.fixVersions?.map(v => v.name)?.join(', ') || 'No fix versions';
+          const affectedVersions = data?.fields?.versions?.map(v => v.name)?.join(', ') || 'No affected versions';
+
+          // Extract linked issues
+          let linkedIssues = 'No linked issues';
+          if (data?.fields?.issuelinks && data.fields.issuelinks.length > 0) {
+            linkedIssues = data.fields.issuelinks.map(link => {
+              const linkedKey = link?.outwardIssue?.key || link?.inwardIssue?.key || 'Unknown';
+              const linkedSummary = link?.outwardIssue?.fields?.summary || link?.inwardIssue?.fields?.summary || 'Unknown';
+              const linkType = link?.type?.name || 'Related to';
+              return `• ${linkType}: ${linkedKey} - ${linkedSummary}`;
+            }).join('\n');
+          }
+
+          // Extract comments for issue tracking
+          let comments = 'No comments';
+          if (data?.fields?.comment?.comments && data.fields.comment.comments.length > 0) {
+            const recentComments = data.fields.comment.comments.slice(-5).map(comment => {
+              const author = comment?.author?.displayName ?? 'Unknown';
+              const created = comment?.created ?? 'Unknown date';
+              const body = comment?.body?.content?.[0]?.content?.[0]?.text ?? comment?.body ?? 'No content';
+              return `**${author}** (${created}):\n${body}`;
+            }).join('\n\n');
+            comments = `Last 5 comments:\n${recentComments}`;
+          }
+
+          // Extract changelog for progress tracking
+          let progressSummary = 'No status changes recorded';
+          if (data?.changelog?.histories && data.changelog.histories.length > 0) {
+            const statusChanges = data.changelog.histories
+              .filter(h => h.items?.some(i => i.field === 'status'))
+              .slice(-5)
+              .map(history => {
+                const timestamp = history?.created ?? 'Unknown';
+                const author = history?.author?.displayName ?? 'Unknown';
+                const statusChange = history.items?.find(i => i.field === 'status');
+                const fromStatus = statusChange?.fromString ?? 'N/A';
+                const toStatus = statusChange?.toString ?? 'N/A';
+                return `• ${timestamp} - ${author} moved from "${fromStatus}" to "${toStatus}"`;
+              }).join('\n');
+            progressSummary = `Recent status transitions:\n${statusChanges}`;
+          }
+
+          // Extract custom fields if available
+          let customFields = '';
+          const customFieldNames = {
+            'Blockers': 'customfield_10041',
+            'Story Points': 'customfield_10039',
+            'Sprint': 'customfield_10040'
+          };
+
+          for (const [name, fieldId] of Object.entries(customFieldNames)) {
+            const value = data?.fields?.[fieldId];
+            if (value) {
+              if (Array.isArray(value)) {
+                customFields += `**${name}:** ${value.map(v => v.name || v.value || v).join(', ')}\n`;
+              } else if (typeof value === 'object') {
+                customFields += `**${name}:** ${value.name || value.value || JSON.stringify(value)}\n`;
+              } else {
+                customFields += `**${name}:** ${value}\n`;
+              }
+            }
+          }
+
+          // Format final output
+          return [
+            `# ${key} - ${summary}`,
+            '',
+            `**Project:** ${project}`,
+            `**Issue Type:** ${issueType}`,
+            `**Status:** ${status}`,
+            `**Priority:** ${priority}`,
+            '',
+            '## Stakeholders',
+            `**Assignee:** ${assignee} (${assigneeEmail})`,
+            `**Reporter:** ${reporter} (${reporterEmail})`,
+            '',
+            '## Timeline',
+            `**Created:** ${created}`,
+            `**Updated:** ${updated}`,
+            `**Due Date:** ${dueDate}`,
+            '',
+            '## Details',
+            `**Description:** ${description}`,
+            '',
+            '## Classification',
+            `**Labels:** ${labels}`,
+            `**Components:** ${components}`,
+            `**Fix Versions:** ${fixVersions}`,
+            `**Affected Versions:** ${affectedVersions}`,
+            '',
+            '## Related Issues',
+            linkedIssues,
+            '',
+            '## Progress Tracking',
+            progressSummary,
+            '',
+            ...(customFields ? ['## Custom Fields', customFields, ''] : []),
+            '## Recent Activity',
+            comments
+          ].join('\n');
+
+        } catch (error) {
+          return `Error retrieving Jira ticket: ${error?.message || error}. Please verify the ticket key (e.g., RDKXR-196) and access token are correct.`;
+        }
+
+  prompt: |
+    You are an AI assistant specialized in analyzing Jira tickets and providing insights on project progress and blockers.
+
+    ### Jira Ticket Information
+    {{context.jiraTicketData}}
+
+    ### User Query
+    {{inputs.userQuery}}
+
+    Provide a comprehensive analysis based strictly on the ticket information above. Focus on:
+    - Current progress and status
+    - Identified blockers and impediments
+    - Key stakeholders and their roles
+    - Timeline and milestones
+    - Recommended next steps or resolutions
+
+    Guidelines:
+    - Be accurate and cite specific details from the ticket
+    - If blockers are not explicitly mentioned, infer them from status, comments, or linked issues
+    - Highlight any overdue items or high-priority concerns
+    - If the query cannot be answered from available data, clearly state what information is missing
+    - Suggest related tickets or actions that might help resolve issues

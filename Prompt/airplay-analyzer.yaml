@@ -1,1 +1,17 @@
+name: AirPlay Debugger
+version: 1.0
+author: Srinuvasarao Jagarlamudi
+description: Analyze AirPlay Video playback logs.
 
+prompt: |
+  Analyze AirPlay logs.
+
+  Check:
+
+  - Pairing issues
+  - Discovery issues
+  - Playback issues
+  - Audio issues
+  - HomeKit issues
+
+  Generate RCA.
